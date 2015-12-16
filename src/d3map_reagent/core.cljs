@@ -49,17 +49,17 @@
     (text (fn [d] ( (.format js/d3 ".1s") d)))))
 
 (let [usajson "js/us.json"]
-  (.json js/d3 usajson
+  (.json js/d3 "./js/us.json"
     (fn [error json]
       (.. svg
         (append "path")
-        (datum (.feature js/topojson (json (.. json objects nation))))
+        (datum (.feature js/topojson json (.. json -objects -nation)))
         (attr "class" "land")
         (attr "d" path))
       
       (.. svg 
         (append "path")
-        (datum (.mesh js/topojson (json (.. json objects states) (fn [a b] (not= a b)))))
+        (datum (.mesh js/topojson json (.. json -objects -states) (fn [a b] (not= a b))))
         (attr "class" "border border-state")
         (attr "d" path))
 
@@ -68,15 +68,15 @@
         (attr "class" "bubble")
         (selectAll "circle")
         (data (.. js/topojson 
-                  (feature json (.. json objects counties)) 
-                  features))
-        (sort (fn [a b] (-  (.. b properties population) (.. a properties population))))
+                  (feature json (.. json -objects -counties))
+                  -features))
+        (sort (fn [a b] (-  (.. b -properties -population) (.. a -properties -population))))
         enter
         (append "circle")
-        (attr "transform" #(str "translate(" (.. path centroid %) ")"))
-        (attr "r" (fn [d] (radius (.. d properties population))))
+        (attr "transform" #(str "translate(" (.centroid path %) ")"))
+        (attr "r" (fn [d] (radius (.. d -properties -population))))
         (append "title")
-        (text (fn [d] (str (.. d properties name) " Population " (formatNumber (.. d properties population))))))
+        (text (fn [d] (str (.. d -properties -name) " Population " (formatNumber (.. d -properties -population))))))
     )))
 
 
