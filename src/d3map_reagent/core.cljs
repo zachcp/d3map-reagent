@@ -1,6 +1,15 @@
 (ns d3map-reagent.core
+  (:require-macros [reagent.ratom :refer [reaction]])
   (:require [reagent.core :as reagent :refer [atom]]
-            [cljsjs.d3]))
+            [ajax.core :refer [GET POST]]
+            [re-frame.core :as re-frame :refer [register-handler
+                                   path
+                                   register-sub
+                                   dispatch
+                                   dispatch-sync
+                                   subscribe]]
+            [cljsjs.d3]
+            [cljsjs.topojson]))
 
 ;cljs port of http://bl.ocks.org/mbostock/9943478
 
@@ -10,89 +19,99 @@
 
 ;; define your app data so that it doesn't get over-written on reload
 
-(def width 960)
-(def height 600)
-(defn formatNumber [d]
-  ((.format js/d3 ",.01f") d))
+;;;---- Event handlers-----------
+(register-handler                 ;; setup initial state
+  :initialize                     ;; usage:  (submit [:initialize])
+  (fn
+    [db _]
+    (GET "js/us.json" {:response-format :json
+                       :handler         #(re-frame/dispatch [:process-mapdata %1])})
+    db))    ;; what it returns becomes the new state
 
-(def path (.. js/d3.geo path (projection nil)))
-(def radius 
-  (.. js/d3.scale 
-            sqrt 
-            (domain #js [0 1e6])
-            (range  #js [0 15] )))
+(register-handler                 ;; setup initial state
+  :process-mapdata                ;; usage:  (submit [:initialize])
+  (fn
+    [db [_ resp]]
+    (let [data (js->clj resp)]
+      {:mapdata #js [resp]})))    ;; what it returns becomes the new state
 
-(def svg 
-  (.. js/d3 (select "body")
-            (append "svg")
-            (attr "width" width)
-            (attr "height" height)))
 
-(def legend 
-  (.. svg (append "g")
-          (attr "class" "legend")
-          (attr "transform" (str "translate(" (- width 50) "," (- height 20) ")"))
-        (selectAll "g")
-          (data #js [1e6 5e6 1e7])
-          enter
-          (append "g")
-    ))
+;;;----Subscription Handlers -----------
+(register-sub
+  :mapdata
+  (fn
+    [db _]                       ;; db is the app-db atom
+    (reaction (:mapdata @db))))    ;; wrap the computation in a reaction
+;;;---------------
+
+
+(defn d3map-inner []
+  (let [width 960
+        height 600
+        formatNumber (fn [d]  ((.format js/d3 ",.01f") d))
+        path (.. js/d3.geo path (projection nil))
+        radius (.. js/d3.scale
+                   sqrt
+                   (domain #js [0 1e6])
+                   (range  #js [0 15] ))
+        update  (fn [comp]
+                  (let [mapclj (reagent/props comp)
+                        json (clj->js mapclj)
+                        svg  (.. js/d3 (select "svg"))]
+
+                    (.. svg (append "g")
+                        (attr "class" "legend")
+                        (attr "transform" (str "translate(" (- width 50) "," (- height 20) ")"))
+                        (selectAll "g")
+                        (data #js [1e6 5e6 1e7])
+                        enter
+                        (append "g"))
+
+                    (.. svg
+                        (append "path")
+                        (datum (.feature js/topojson json (.. json -objects -nation)))
+                        (attr "class" "land")
+                        (attr "d" path))
+
+                    (.. svg
+                        (append "g")
+                        (attr "class" "bubble")
+                        (selectAll "circle")
+                        (data (.. js/topojson
+                                  (feature json (.. json -objects -counties))
+                                  -features))
+                        (sort (fn [a b] (-  (.. b -properties -population) (.. a -properties -population))))
+                        enter
+                        (append "circle")
+                        (attr "transform" #(str "translate(" (.centroid path %) ")"))
+                        (attr "r" (fn [d] (radius (.. d -properties -population))))
+                        (append "title")
+                        (text (fn [d] (str (.. d -properties -name) " Population " (formatNumber (.. d -properties -population))))))
+                    ))]
+    
+    (reagent/create-class
+      {:reagent-render (fn []
+                         [:div
+                          [:h2 "Awesome Map"]
+                          [:div#map [:svg {:style {:height (str  height "px") :width (str width "px")}}] ]])
+
+       :component-did-mount (fn [comp] (update comp))
+       :component-did-update update
+       :display-name "d3map-inner"})))
+
+;(defn simplecomponent []
+;  (let [mapdata (re-frame/subscribe [:mapdata])]
+;    (println @mapdata)
+;    [:p (str (first @mapdata))]))
+
+(defn d3map-outer []
+  (let [mapdata (re-frame/subscribe [:mapdata])]   ;; obtain the data
+    (fn []
+      [d3map-inner (first @mapdata)])))
 
 (let []
-  (.. legend 
-    (append "circle")
-    (attr "cy" #(-  (radius %))))
-  (.. legend
-    (append "text")
-    (attr "y" #(* -2 (radius %)))
-    (attr "dy" "1.3em")
-    (text (fn [d] ( (.format js/d3 ".1s") d)))))
-
-(let [usajson "js/us.json"]
-  (.json js/d3 "./js/us.json"
-    (fn [error json]
-      (.. svg
-        (append "path")
-        (datum (.feature js/topojson json (.. json -objects -nation)))
-        (attr "class" "land")
-        (attr "d" path))
-      
-      (.. svg 
-        (append "path")
-        (datum (.mesh js/topojson json (.. json -objects -states) (fn [a b] (not= a b))))
-        (attr "class" "border border-state")
-        (attr "d" path))
-
-      (.. svg
-        (append "g")
-        (attr "class" "bubble")
-        (selectAll "circle")
-        (data (.. js/topojson 
-                  (feature json (.. json -objects -counties))
-                  -features))
-        (sort (fn [a b] (-  (.. b -properties -population) (.. a -properties -population))))
-        enter
-        (append "circle")
-        (attr "transform" #(str "translate(" (.centroid path %) ")"))
-        (attr "r" (fn [d] (radius (.. d -properties -population))))
-        (append "title")
-        (text (fn [d] (str (.. d -properties -name) " Population " (formatNumber (.. d -properties -population))))))
-    )))
+  (dispatch-sync [:initialize])
+  (reagent/render [d3map-outer] (. js/document (getElementById "app")))
+  )
 
 
-
-
-(defonce app-state (atom {:text "Hello world!"}))
-
-(defn hello-world []
-  [:h1 (:text @app-state)])
-
-(reagent/render-component [hello-world]
-                          (. js/document (getElementById "app")))
-
-
-(defn on-js-reload []
-  ;; optionally touch your app-state to force rerendering depending on
-  ;; your application
-  ;; (swap! app-state update-in [:__figwheel_counter] inc)
-)
