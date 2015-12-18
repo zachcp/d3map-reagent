@@ -156,7 +156,18 @@
        (for [m @molecules]
          [:option {:value  (str m)} (str m)])])))
 
-(defn NYCmap-inner [countdata]
+(defn updatefn
+  ([comp]
+   (let [countdata (-> comp reagent/props :test :data)]
+      (println countdata)
+      (.. js/d3
+          (selectAll "circle")
+          (data (clj->js countdata))
+          (attr "r"  (fn [d] (.-size d))))
+      (println "In the update function"))))
+
+
+(defn NYCmap-inner []
   (let [width 960
         height 500
         projection (.. js/d3.geo
@@ -170,36 +181,22 @@
         getlatlon (fn [datamap] (let [latitude (:Latitude datamap)
                                       longitude (:Longitude datamap)
                                       [lon lat] (js->clj (projection #js [longitude latitude])) ]
-                                  (merge datamap {:d3lat lon  :d3lon lat})))
-
-        update  (fn [comp]
-                  (let [countdata (-> comp reagent/props :data)]
-                    (println countdata)
-                    (.. js/d3
-                        (selectAll "circle")
-                        (data (clj->js countdata))
-                        (attr "r"  (fn [d] (.-size d))))
-
-                    (println "In the update function")))]
-
+                                  (merge datamap {:d3lat lon  :d3lon lat})))]
     (reagent/create-class
       {:reagent-render (fn []
-                         [:div
-                          [:h2 "Awesome NYC Map"]
-                          [:div#map
-                           [molecule-select-box]
-                           [:svg {:style {:height (str  height "px") :width (str width "px")}}]]])
+                         [:div [:h2 "Awesome NYC Map"]
+                               [:div#map [molecule-select-box]
+                                [:svg {:style {:height (str  height "px") :width (str width "px")}}]]])
 
        :component-did-mount (fn [comp]
-                              (let [
-                                    ;countdata (-> comp reagent/props :data)
+                              (let [countdata (-> comp reagent/props :test :data)
                                     countdata-updated (map getlatlon countdata)
                                     svg  (.. js/d3 (select "svg"))]
                                 (println countdata)
                                 (do (load-map "js/nyc.json" svg path))
                                     (draw-points svg (clj->js countdata-updated))))
 
-       :component-did-update update
+       :component-did-update updatefn
        :display-name "d3map-inner"})))
 
 
@@ -207,10 +204,9 @@
 (defn NYCmap-outer []
   (let [countdata (re-frame/subscribe [:countdata])
         activemol (re-frame/subscribe [:activemolecule])]
-    (println @countdata)
     (fn []
       [:div
-       [NYCmap-inner @countdata]
+       [NYCmap-inner {:test @countdata} ]
        (when @activemol [:h3 (str "Activemol: " @activemol)])])))
 
 (let []
