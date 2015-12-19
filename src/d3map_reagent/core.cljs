@@ -167,7 +167,7 @@
       (println "In the update function"))))
 
 
-(defn NYCmap-inner []
+(defn NYCmap-inner [countdata]
   (let [width 960
         height 500
         projection (.. js/d3.geo
@@ -183,20 +183,35 @@
                                       [lon lat] (js->clj (projection #js [longitude latitude])) ]
                                   (merge datamap {:d3lat lon  :d3lon lat})))]
     (reagent/create-class
-      {:reagent-render (fn []
+      {:reagent-render (fn [countdata]
                          [:div [:h2 "Awesome NYC Map"]
                                [:div#map [molecule-select-box]
                                 [:svg {:style {:height (str  height "px") :width (str width "px")}}]]])
 
-       :component-did-mount (fn [comp]
-                              (let [countdata (-> comp reagent/props :test :data)
+       :component-did-mount (fn [this]
+                              (let [[_ countdata] (reagent/argv this)
                                     countdata-updated (map getlatlon countdata)
                                     svg  (.. js/d3 (select "svg"))]
+                                (println "in the component function")
                                 (println countdata)
                                 (do (load-map "js/nyc.json" svg path))
                                     (draw-points svg (clj->js countdata-updated))))
 
-       :component-did-update updatefn
+       :component-did-update
+                       (fn [this]
+                         (let [[_ countdata] (reagent/argv this)
+                               pointdata (clj->js countdata)]
+                           ;; This is where we get to actually draw the D3 gauge.
+                           (.. js/d3
+                               (selectAll "circle")
+                               (data pointdata)
+                               (attr "r"  (fn [d] (.-size d))))
+                           (js/console.log pointdata)
+                           (println "In the update function")
+                           (println (str countdata))
+                           (println (str (first countdata)))
+                           (println "pointdata" pointdata)))
+
        :display-name "d3map-inner"})))
 
 
@@ -206,7 +221,7 @@
         activemol (re-frame/subscribe [:activemolecule])]
     (fn []
       [:div
-       [NYCmap-inner {:test @countdata} ]
+       [NYCmap-inner @countdata ]
        (when @activemol [:h3 (str "Activemol: " @activemol)])])))
 
 (let []
