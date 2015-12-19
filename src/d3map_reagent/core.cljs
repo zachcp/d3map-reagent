@@ -132,46 +132,19 @@
           (attr "d" path)
           (style "fill" (fn [d]  (.-colors d)))))))
 
-(defn draw-points [svg counts]
-  "use d3.json to load the json file and crete the map in the svg element usin the path"
-  (.. svg
-      (append "g")
-      (attr "id" "circle")
-      (selectAll "circle")
-      (data counts)
-      enter
-      (append "svg:circle")
-      (attr "cx" (fn [d] (.-d3lat d)))
-      (attr "cy" (fn [d] (.-d3lon d)))
-      (attr "r"  (fn [d] (.-size d)))
-      (attr "class" "bubble")
-      ))
-
 
 (defn molecule-select-box []
-  ""
+  "the select box to choose the active molecules"
   (let [molecules (re-frame/subscribe [:molecules])]
     (fn []
       [:select {:on-change #(re-frame/dispatch [:update-active (-> % .-target .-value)])}
        (for [m @molecules]
          [:option {:value  (str m)} (str m)])])))
 
-(defn updatefn
-  ([comp]
-   (let [countdata (-> comp reagent/props :test :data)]
-      (println countdata)
-      (.. js/d3
-          (selectAll "circle")
-          (data (clj->js countdata))
-          (attr "r"  (fn [d] (.-size d))))
-      (println "In the update function"))))
-
-
 (defn NYCmap-inner [countdata]
   (let [width 960
         height 500
-        projection (.. js/d3.geo
-                       mercator
+        projection (.. js/d3.geo mercator
                        (center #js [-73.94 40.7])
                        (scale 50000)
                        (translate #js [(/ width 2) (/ height 2)]))
@@ -184,36 +157,76 @@
                                   (merge datamap {:d3lat lon  :d3lon lat})))]
     (reagent/create-class
       {:reagent-render (fn [countdata]
-                         [:div [:h2 "Awesome NYC Map"]
-                               [:div#map [molecule-select-box]
-                                [:svg {:style {:height (str  height "px") :width (str width "px")}}]]])
+                         [:div
+                          [:h2 "Awesome NYC Map"]
+                          [:div#map
+                           [molecule-select-box]
+                           [:svg {:style {:height (str  height "px") :width (str width "px")}}]]])
 
-       :component-did-mount (fn [this]
-                              (let [[_ countdata] (reagent/argv this)
-                                    countdata-updated (map getlatlon countdata)
-                                    svg  (.. js/d3 (select "svg"))]
-                                (println "in the component function")
-                                (println countdata)
-                                (do (load-map "js/nyc.json" svg path))
-                                    (draw-points svg (clj->js countdata-updated))))
+       :component-did-mount
+                        (fn [this]
+                            (let [[_ countdata] (reagent/argv this)
+                                  countdata-updated (map getlatlon countdata)
+                                  pointdata (clj->js countdata-updated)
+                                  radius (.. js/d3.scale sqrt (domain #js [0 5]) (range #js [0 10]))
+                                  svg (.. js/d3 (select "svg"))]
+                              ;; draw the map (only happens once)
+                              (load-map "js/nyc.json" svg path)
+
+                              ;; create and draw initial points
+                              (.. svg
+                                  (append "g")
+                                  (attr "id" "circle")
+                                  (selectAll "circle")
+                                  (data pointdata)
+                                  enter
+                                  (append "svg:circle")
+                                  (attr "cx" (fn [d] (.-d3lat d)))
+                                  (attr "cy" (fn [d] (.-d3lon d)))
+                                  (attr "r"  (fn [d] (radius (.-size d))))
+                                  (attr "class" "bubble"))
+
+                              ;; create the legend
+                              (.. svg
+                                  (append "g")
+                                  (attr "class" "legend")
+                                  (attr "transform" (str "translate(" (- width 50) "," (- height 20) ")")))))
 
        :component-did-update
                        (fn [this]
                          (let [[_ countdata] (reagent/argv this)
-                               pointdata (clj->js countdata)]
-                           ;; This is where we get to actually draw the D3 gauge.
+                               pointdata (clj->js countdata)
+                               maxradius (first (max (map #(:size %) countdata)))
+                               radius (.. js/d3.scale sqrt (domain (clj->js [0 maxradius])) (range #js [0 20]))
+                               legend-data (clj->js [0 (/ 10 maxradius) maxradius])
+                               legend (.. js/d3
+                                          (select ".legend")
+                                          (selectAll "g")
+                                          (data legend-data)
+                                          enter
+                                          (append "g"))]
+
+                           ;; redraw based on size
                            (.. js/d3
                                (selectAll "circle")
                                (data pointdata)
-                               (attr "r"  (fn [d] (.-size d))))
-                           (js/console.log pointdata)
-                           (println "In the update function")
-                           (println (str countdata))
-                           (println (str (first countdata)))
-                           (println "pointdata" pointdata)))
+                               (attr "r"  (fn [d] (radius (.-size d)) )))
+
+
+                           ;; update the legend
+                           (.. legend
+                               (append "circle")
+                               (attr "cy" (fn [d] (- (radius d))))
+                               (attr "r"  (fn [d] (radius d))))
+
+                           (.. legend
+                               (append "text")
+                               (attr "y"   (fn [d] (* -2 (radius d))))
+                               (attr "dy"  "1.3em")
+                               (text (fn [d] ((.format js/d3 "0.01s") d))))
+                           ))
 
        :display-name "d3map-inner"})))
-
 
 
 (defn NYCmap-outer []
