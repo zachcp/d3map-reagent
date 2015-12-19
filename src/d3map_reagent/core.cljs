@@ -20,26 +20,26 @@
 ;; define your app data so that it doesn't get over-written on reload
 
 ;;;---- Basic DB ----------------
-(def dbstart {:countdata {:data [{:samplename "DFD_1128.1",
-                                    :Longitude  -73.9185,
-                                    :Latitude   40.5879,
-                                    :totalreads 50095,
-                                    :countdata  {"A40926"       0,
-                                                 "A47934"       63,
-                                                 "A54145"       0,
-                                                 "actinomycin"  0,
-                                                 "aculeximycin" 0}
-                                    :size       5}
-                                   {:samplename "DFD_1128.1",
-                                    :Longitude  -73.8185,
-                                    :Latitude   40.7879,
-                                    :totalreads 50095,
-                                    :countdata  {"A40926"       0,
-                                                 "A47934"       63,
-                                                 "A54145"       0,
-                                                 "actinomycin"  0,
-                                                 "aculeximycin" 0}
-                                    :size       5}]}
+(def dbstart {:countdata  [{:samplename "DFD_1128.1",
+                            :Longitude  -73.9185,
+                            :Latitude   40.5879,
+                            :totalreads 50095,
+                            :countdata  {"A40926"       0,
+                                         "A47934"       63,
+                                         "A54145"       0,
+                                         "actinomycin"  0,
+                                         "aculeximycin" 0}
+                            :size       5}
+                           {:samplename "DFD_1128.1",
+                            :Longitude  -73.8185,
+                            :Latitude   40.7879,
+                            :totalreads 50095,
+                            :countdata  {"A40926"       0,
+                                         "A47934"       63,
+                                         "A54145"       0,
+                                         "actinomycin"  0,
+                                         "aculeximycin" 0}
+                            :size       5}]
 
                          :molecules ["A40926"
                                      "A47934"
@@ -79,18 +79,18 @@
   (fn
     [db [_ resp]]
     (let [counts (js->clj resp :keywordize-keys true)]
-    (assoc db :countdata {:data counts}))))    ;; what it returns becomes the new state
+    (assoc db :countdata counts))))    ;; what it returns becomes the new state
 
 (register-handler
   :update-active
   (fn
     [db [_ molvalue]]
-    (let [countdata (-> db :countdata :data)
+    (let [countdata (-> db :countdata)
           newvalues (map #(calculate-countdata % molvalue) countdata)]
       (println countdata)
       (println newvalues)
     (-> db (assoc :activemolecule molvalue)
-           (assoc :countdata {:data newvalues})))))  ;; what it returns becomes the new state
+           (assoc :countdata newvalues)))))  ;; what it returns becomes the new state
 
 
 ;;;----Subscription Handlers -----------
@@ -98,14 +98,14 @@
   :countdata
   (fn
     [db _]
-    (reaction (-> @db :countdata :data))))
+    (reaction (-> @db :countdata))))
 
 
 (register-sub
   :molecules
   (fn
     [db _]
-    (let [countdata (reaction (-> @db :countdata :data))
+    (let [countdata (reaction (-> @db :countdata ))
           molecules (reaction (-> @countdata first :countdata keys))]
       molecules)))
 
